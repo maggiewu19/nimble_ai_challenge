@@ -4,6 +4,7 @@ Kinematics Challenge
 
 import numpy as np
 import math3d as m3d
+import math 
 import copy
 from scipy import optimize
 
@@ -17,6 +18,16 @@ class robot(object):
 		self.base_frame = base_frame
 		self.tool_transform = tool_transform
 
+		# ARM LENGTH (D-H) 
+		a_2 = -0.425
+		a_3 = -0.39225 
+		d_1 = 0.089159
+		d_4 = 0.10915
+		d_5 = 0.09465 
+		d_6 = 0.0823 
+		self.alpha_minus_1 = np.array([0, np.pi/2, 0, 0, np.pi/2, -np.pi/2])
+		self.a_minus_1 = np.array([0, 0, a_2, a_3, 0, 0])
+		self.d = np.array([d_1, 0, 0, d_4, d_5, d_6])
 
 	# FORWARD KINEMATICS:
 	def getFK(self, joint_angles):
@@ -26,8 +37,21 @@ class robot(object):
 		'''
 
 		tool_frame = m3d.Transform()
-		####  YOUR CODE GOES HERE
+		self.thetas = joint_angles 
 
+		def transformation(t, alpha, a, d): 
+			return np.array([[math.cos(t), -math.sin(t), 0, alpha], 
+							[math.sin(t)*math.cos(alpha), math.cos(t)*math.cos(alpha), -math.sin(alpha), -math.sin(alpha)*d], 
+							[math.sin(t)*math.sin(alpha), math.cos(t)*math.sin(alpha), math.cos(alpha), math.cos(alpha)*d], 
+							[0, 0, 0, 1]])
+
+		t, alpha, a, d = self.thetas[0], self.alpha_minus_1[0], self.a_minus_1[0], self.d[0]
+		T_0_6 = transformation(t, alpha, a, d)
+		for i in range(1, 6): 
+			t, alpha, a, d = self.thetas[i], self.alpha_minus_1[i], self.a_minus_1[i], self.d[i]
+			T_0_6 = np.matmul(T_0_6, transformation(t, alpha, a, d))
+
+		tool_frame.set_pos(T_0_6)
 		return tool_frame
 
 
@@ -135,3 +159,5 @@ class robot(object):
 		####  YOUR CODE GOES HERE
 
 		return joint_angles
+
+ur5 = robot() 
