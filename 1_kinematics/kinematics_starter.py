@@ -40,18 +40,26 @@ class robot(object):
 		self.thetas = joint_angles 
 
 		def transformation(t, alpha, a, d): 
-			return np.array([[math.cos(t), -math.sin(t), 0, alpha], 
-							[math.sin(t)*math.cos(alpha), math.cos(t)*math.cos(alpha), -math.sin(alpha), -math.sin(alpha)*d], 
-							[math.sin(t)*math.sin(alpha), math.cos(t)*math.sin(alpha), math.cos(alpha), math.cos(alpha)*d], 
-							[0, 0, 0, 1]])
+			return m3d.Transform(np.array([[math.cos(t), -math.sin(t), 0, a], 
+											[math.sin(t)*math.cos(alpha), math.cos(t)*math.cos(alpha), -math.sin(alpha), -math.sin(alpha)*d], 
+											[math.sin(t)*math.sin(alpha), math.cos(t)*math.sin(alpha), math.cos(alpha), math.cos(alpha)*d], 
+											[0, 0, 0, 1]]))
 
 		t, alpha, a, d = self.thetas[0], self.alpha_minus_1[0], self.a_minus_1[0], self.d[0]
 		T_0_6 = transformation(t, alpha, a, d)
+
 		for i in range(1, 6): 
 			t, alpha, a, d = self.thetas[i], self.alpha_minus_1[i], self.a_minus_1[i], self.d[i]
-			T_0_6 = np.matmul(T_0_6, transformation(t, alpha, a, d))
+			T_0_6 *= transformation(t, alpha, a, d)
 
-		tool_frame.set_pos(T_0_6)
+		ee_transform = self.tool_transform.copy() 
+		T_0_6 *= ee_transform
+
+		tool_frame.set_orient(T_0_6.get_orient())
+		tool_frame.set_pos(T_0_6.get_pos())
+
+		print (tool_frame)
+
 		return tool_frame
 
 
@@ -129,7 +137,7 @@ class robot(object):
 
 
 
-	def xyzToolAngleError(self, joint_angles, poseGoal angleErrorScale=.02):
+	def xyzToolAngleError(self, joint_angles, poseGoal, angleErrorScale=.02):
 		''' Calculate the error between the goal position and orientation and the actual
 			position and orientation
 
@@ -160,4 +168,12 @@ class robot(object):
 
 		return joint_angles
 
-ur5 = robot() 
+
+tool_transform = m3d.Transform(np.array([[1, 0, 0, 0], 
+										[0, 1, 0, 0],
+										[0, 0, 1, 1],
+										[0, 0, 0, 1]])) 
+ur5 = robot(tool_transform=tool_transform) 
+ur5.getFK(np.array([np.pi/2, np.pi/2, 0, 0, np.pi/2, 0]))
+
+
