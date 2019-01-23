@@ -1,5 +1,5 @@
 import numpy as np 
-from numpy.linalg import lstsq, inv
+from numpy.linalg import lstsq, inv, norm
 import math 
 from PIL import Image
 
@@ -29,9 +29,12 @@ def generate_point_cloud(rgb_file, intrinsic, extrinsic):
 	input: rgb (colored image)
 			intrinsic (3 x 3 matrix): includes camera focals etc 
 			extrinsic (6 x 1 vector): x,y,z,rx,ry,rz
-	output: n x 6 array (x,y,z,r,g,b)
+	output: point cloud (n x 6 matrix): (x,y,z,r,g,b)
 	'''
 	def get_rt(extrinsic):
+		'''
+		get rotation and translation matrix/vector 
+		'''
 		x, y, z, rx, ry, rz = extrinsic 
 
 		rotation = np.array([[math.cos(rx)*math.cos(ry), 
@@ -69,8 +72,57 @@ def generate_point_cloud(rgb_file, intrinsic, extrinsic):
 	return np.array(point_cloud)
 
 
-def point_cloud_surface_normal(point_cloud, pos):
-	pass 
+def point_cloud_surface_normal(point_cloud, pos, k=10):
+	'''
+	find surface normal given knn (assume 10 for this question) of given position using least square 
+
+	input: point cloud (n x 6 matrix)
+			pos (xyz): ndarray of position 
+	output: surface normal (3 x 1 vector)
+	'''
+	def dist(point1, point2):
+		'''
+		get distance between two numpy vector 
+		'''
+		return norm(point1 - point2)
+
+	def knn(k): 
+		'''
+		return knn by euclidean distance 
+		'''
+		nn = list() 
+		for p in point_cloud: 
+			arr = np.array(p[0:3])
+			d = dist(arr, pos)
+
+			if len(nn) < k: 
+				nn.append((arr, d))
+			elif d < nn[-1][1]:
+				nn[k-1] = (arr, d)
+
+			nn = sorted(nn, key=lambda x:x[1])
+
+		return nn 
+
+	def plane_fitting(nn):
+		'''
+		fit plane based on nearest neighbors (Ax + By + C)
+		'''
+		M, b = list(), list() 
+		for n in nn: 
+			M.append([1, n[0][0], n[0][1]])
+			b.append(n[0][2])
+
+		# (M_transpose * M) * plane (C, A, B) = M_transpose * b 
+		plane = np.dot(np.matmul(inv(np.matmul(np.transpose(M), M)), np.transpose(M)), b)
+
+		return plane[1], plane[2], plane[0]
+
+	nn = knn(k)
+	plane = plane_fitting(nn)
+	print (plane)
+
+	return plane 
 
 sample0 = '0.txt'
 sample1 = '1.txt'
@@ -79,5 +131,7 @@ rgb0 = '0.png'
 rgb1 = '1.png'
 
 intrinsic, extrinsic = load_params(INTRINSIC_DIR+sample0, EXTRINSIC_DIR+sample0)
-generate_point_cloud(RGB_DIR+rgb0, intrinsic, extrinsic)
+point_cloud = generate_point_cloud(RGB_DIR+rgb0, intrinsic, extrinsic)
+point_cloud_surface_normal(point_cloud, np.array([-0.5, -0.5, -0.5]))
+
 
