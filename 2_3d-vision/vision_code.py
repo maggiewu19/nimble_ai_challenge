@@ -8,6 +8,9 @@ EXTRINSIC_DIR = '2.1-2.5/extrinsics/'
 RGB_DIR = '2.1-2.5/rgb/'
 
 def load_params(intrinsic_file, extrinsic_file):
+	'''
+	read intrinsic and extrinsic txt file to use as ndarray 
+	'''
 	intrinsic = open(intrinsic_file, 'r')
 	extrinsic = open(extrinsic_file, 'r')
 
@@ -59,6 +62,7 @@ def generate_point_cloud(rgb_file, intrinsic, extrinsic):
 	k_inverse = inv(intrinsic)
 	r_transpose = np.transpose(rotation)
 
+	# get xyzrgb for every pixel 
 	for v in range(rgb.size[1]):
 		for u in range(rgb.size[0]):
 
@@ -124,6 +128,7 @@ def point_cloud_surface_normal(point_cloud, pos, k=10):
 
 	return plane 
 
+# Example point cloud and surface normal 
 sample0 = '0.txt'
 sample1 = '1.txt'
 

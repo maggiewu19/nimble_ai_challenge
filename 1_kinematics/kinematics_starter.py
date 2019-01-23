@@ -19,6 +19,7 @@ class robot(object):
 		self.tool_transform = tool_transform
 
 		# arm length (d-h)
+		# ur5 constants 
 		a_2 = -0.425
 		a_3 = -0.39225 
 		d_1 = 0.089159
@@ -55,10 +56,12 @@ class robot(object):
 		t, alpha, a, d = self.thetas[0], self.alpha_minus_1[0], self.a_minus_1[0], self.d[0]
 		T_0_6 = self.transformation(t, alpha, a, d)
 
+		# T_0_6 derived from combination of transformations
 		for i in range(1, 6): 
 			t, alpha, a, d = self.thetas[i], self.alpha_minus_1[i], self.a_minus_1[i], self.d[i]
 			T_0_6 *= self.transformation(t, alpha, a, d)
 
+		# set orientation and position 
 		tool_frame.set_orient(T_0_6.get_orient())
 		tool_frame.set_pos(T_0_6.get_pos())
 
@@ -136,11 +139,15 @@ class robot(object):
 
 		print ('Pose Transform', poseTransform)
 
+		# input end effector pose position and orientation 
 		P_0_6 = poseTransform.get_pos()
 		O_0_6 = poseTransform.get_orient()
 		P_0_5 = poseTransform * m3d.Vector(np.array([0, 0, -self.d[5]]))
 
 		def angle_restriction(angle):
+			'''
+			restrict angle to 0 to 2pi 
+			'''
 			if -zero_limit < angle < zero_limit or 2*np.pi - zero_limit < angle < 2*np.pi + zero_limit:
 				return 0 
 
@@ -154,6 +161,9 @@ class robot(object):
 
 		# theta 1 (2 possible solutions)
 		def get_theta1(P_0_5): 
+			'''
+			get theta1 given analytical inverse kinematics
+			'''
 			P_0_5x = P_0_5[0]
 			P_0_5y = P_0_5[1]
 
@@ -176,6 +186,9 @@ class robot(object):
 
 		# theta 5 (2 possible solutions)
 		def get_theta5(s, P_0_6):
+			'''
+			get theta5 given analytical inverse kinematics
+			'''
 			theta1 = s[0]
 
 			P_0_6 = P_0_6[0]
@@ -202,6 +215,9 @@ class robot(object):
 
 		# theta 6 (1 possible solution)
 		def get_theta6(s, O_0_6):
+			'''
+			get theta6 given analytical inverse kinematics
+			'''
 			theta1, theta5 = s
 
 			O_0_6 = O_0_6[0]
@@ -219,6 +235,9 @@ class robot(object):
 			return theta6 
 
 		def get_T_1_4(theta1, theta5, theta6, P_0_5):
+			'''
+			get joint1-joint4 transformation matrix 
+			'''
 			rotation_0_1 = m3d.Orientation(np.array([[math.cos(theta1), math.sin(theta1), 0],
 													[-math.sin(theta1), math.cos(theta1), 0], 
 													[0, 0, 1]])) 
@@ -234,6 +253,9 @@ class robot(object):
 
 		# theta 3 (2 possible solutions)
 		def get_theta3(s, P_0_5): 
+			'''
+			get theta3 given analytical inverse kinematics
+			'''
 			theta1, theta5, theta6 = s
 
 			P_0_5 = P_0_5[0]
@@ -262,6 +284,9 @@ class robot(object):
 
 		# theta 2 (1 possible solution)
 		def get_theta2(s, P_0_5): 
+			'''
+			get theta2 given analytical inverse kinematics
+			'''
 			theta1, theta5, theta6, theta3 = s
 
 			P_0_5 = P_0_5[0]
@@ -280,6 +305,9 @@ class robot(object):
 			return theta2 
 
 		def get_T_3_4(theta2, theta3, T_1_4):
+			'''
+			get joint3-joint4 transformation matrix 
+			'''
 			T_1_2 = self.transformation(theta2, self.alpha_minus_1[1], self.a_minus_1[1], self.d[1])
 			T_2_3 = self.transformation(theta3, self.alpha_minus_1[2], self.a_minus_1[2], self.d[2])
 
@@ -288,6 +316,9 @@ class robot(object):
 
 		# theta 4 (1 possible solution)
 		def get_theta4(s, P_0_5):
+			'''
+			get theta4 given analytical inverse kinematics
+			'''
 			theta1, theta5, theta6, theta3, theta2 = s
 
 			P_0_5 = P_0_5[0]
@@ -307,6 +338,9 @@ class robot(object):
 			return theta4 
 
 		def get_joint_angle(solutions, f, *args):
+			'''
+			general function for returning joint angle up to angle defined by function f with *args
+			'''
 			next_s = list() 
 
 			for s in solutions: 
@@ -320,6 +354,9 @@ class robot(object):
 			return next_s 
 
 		def rmse(solution, seed):
+			'''
+			root mean squared error to compare valid solution to seed joint angles 
+			'''
 			diff = solution - seed
 			mse = sum(np.power(diff, 2))
 			return math.sqrt(mse)
@@ -332,6 +369,7 @@ class robot(object):
 			print ('IK cannot be found!')
 			return None 
 		
+		# cumulating joint angle 
 		theta1 = [[theta1[0]], [theta1[1]]]
 		theta5 = get_joint_angle(theta1, get_theta5, P_0_6)
 		theta6 = get_joint_angle(theta5, get_theta6, O_0_6)
@@ -389,6 +427,7 @@ class robot(object):
 		return joint_angles
 
 
+# Example FK and IK 
 tool_transform = m3d.Transform(np.array([[1, 0, 0, 0], 
 										[0, 1, 0, 0],
 										[0, 0, 1, 1],
