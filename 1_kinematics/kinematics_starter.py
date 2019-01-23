@@ -29,7 +29,7 @@ class robot(object):
 		self.a_minus_1 = np.array([0, 0, a_2, a_3, 0, 0])
 		self.d = np.array([d_1, 0, 0, d_4, d_5, d_6])
 
-	def transformation(t, alpha, a, d): 
+	def transformation(self, t, alpha, a, d): 
 		''' To 
 			
 			input: t (theta) in radians 
@@ -122,24 +122,7 @@ class robot(object):
 
 		return jacobian
 
-
-	# def getIK(self, poseGoal, seed_joint_angles=np.zeros((6,))):
-	# 	''' Analytically solve the inverse kinematics
-
-	# 		inputs: poseGoal = [x,y,z,rx,ry,rz] goal position of end-effector in global frame.
-	# 							Orientation [rx,ry,rz] specified in rotation vector (axis angle) form [rad]
-	# 				seed_joint_angles = [theta1, theta2, theta3, theta4, theta5, theta6]
-	# 									 seed angles for comparing solutions to ensure mode change does not occur
-
-	# 		outputs: joint_angles = joint angles in rad to reach goal end-effector pose
-	# 	'''
-
-	# 	joint_angles = np.zeros((1,6))
-	# 	####  YOUR CODE GOES HERE
-
-	# 	return joint_angles
-
-	def getIK(self, poseTransform, seed_joint_angles=np.zeros((6,))):
+	def getIK(self, poseTransform, seed_joint_angles=np.zeros((6,)), zero_limit=1e-5, infty_limit=1e10, err=float('inf')):
 		''' Analytically solve the inverse kinematics
 
 			inputs: poseTransform = 4 x 4 end effector transformation matrix
@@ -152,72 +135,224 @@ class robot(object):
 		joint_angles = np.zeros((1,6))
 
 		print ('Pose Transform', poseTransform)
+
 		P_0_6 = poseTransform.get_pos()
-		P_0_6x = P_0_6[0]
-		P_0_6y = P_0_6[1]
-
 		O_0_6 = poseTransform.get_orient()
-		X_0_6x = O_0_6[0][0]
-		X_0_6y = O_0_6[1][0]
-		Y_0_6x = O_0_6[0][1]
-		Y_0_6y = O_0_6[1][1]
-
 		P_0_5 = poseTransform * m3d.Vector(np.array([0, 0, -self.d[5]]))
-		P_0_5x = P_0_5[0]
-		P_0_5y = P_0_5[1]
+
+		def angle_restriction(angle):
+			if -zero_limit < angle < zero_limit or 2*np.pi - zero_limit < angle < 2*np.pi + zero_limit:
+				return 0 
+
+			while angle > 2*np.pi: 
+				angle -= 2*np.pi
+
+			while angle < 0: 
+				angle += 2*np.pi 
+
+			return angle 
 
 		# theta 1 (2 possible solutions)
-		theta1 = [math.atan2(P_0_5y, P_0_5x) + math.acos(self.d[3]/math.sqrt(P_0_5x**2 + P_0_5y**2)) + np.pi/2, 
-				math.atan2(P_0_5y, P_0_5x) - math.acos(self.d[3]/math.sqrt(P_0_5x**2 + P_0_5y**2)) + np.pi/2]
-		print ('Theta 1', theta1)
+		def get_theta1(P_0_5): 
+			P_0_5x = P_0_5[0]
+			P_0_5y = P_0_5[1]
+
+			acos_val = self.d[3]/math.sqrt(P_0_5x**2 + P_0_5y**2)
+
+			if 1 + zero_limit > abs(acos_val) > 1 - zero_limit: 
+				acos_val = 1 
+
+			if abs(acos_val) > 1: 
+				return None 
+
+			sol1 = angle_restriction(math.atan2(P_0_5y, P_0_5x) + math.acos(acos_val) + np.pi/2)
+			sol2 = angle_restriction(math.atan2(P_0_5y, P_0_5x) - math.acos(acos_val) + np.pi/2)
+
+			theta1 = [sol1, sol2]
+
+			# print ('Theta 1', theta1)
+
+			return theta1 
 
 		# theta 5 (2 possible solutions)
-		theta5 = [(math.acos(P_0_6x * math.sin(theta1) - P_0_6y * math.cos(theta1) - self.d[3]))/self.d[5], 
-				-(math.acos(P_0_6x * math.sin(theta1) - P_0_6y * math.cos(theta1) - self.d[3]))/self.d[5]]
-		print ('Theta 5', theta5)
+		def get_theta5(s, P_0_6):
+			theta1 = s[0]
+
+			P_0_6 = P_0_6[0]
+
+			P_0_6x = P_0_6[0]
+			P_0_6y = P_0_6[1]
+
+			acos_val = (P_0_6x * math.sin(theta1) - P_0_6y * math.cos(theta1) - self.d[3])/self.d[5]
+
+			if 1 + zero_limit > abs(acos_val) > 1 - zero_limit: 
+				acos_val = 1 
+
+			if abs(acos_val) > 1 + zero_limit: 
+				return None 
+
+			sol1 = angle_restriction(math.acos(acos_val))
+			sol2 = angle_restriction(-math.acos(acos_val))
+
+			theta5 = [sol1, sol2]
+
+			# print ('Theta 5', theta5)
+
+			return theta5 
 
 		# theta 6 (1 possible solution)
-		theta6 = [math.atan2((-X_0_6y * math.sin(theta1) + Y_0_6y * math.cos(theta1))/math.sin(theta5), (X_0_6x * math.sin(theta1) - Y_0_6x * math.cos(theta1))/math.sin(theta5))]
-		print ('Theta 6', theta6)
+		def get_theta6(s, O_0_6):
+			theta1, theta5 = s
+
+			O_0_6 = O_0_6[0]
+
+			X_0_6x = O_0_6[0][0]
+			X_0_6y = O_0_6[1][0]
+			Y_0_6x = O_0_6[0][1]
+			Y_0_6y = O_0_6[1][1]
+
+			sol1 = angle_restriction(math.atan2((-X_0_6y * math.sin(theta1) + Y_0_6y * math.cos(theta1))/math.sin(theta5), (X_0_6x * math.sin(theta1) - Y_0_6x * math.cos(theta1))/math.sin(theta5)))
+
+			theta6 = [sol1]
+			# print ('Theta 6', theta6)
+
+			return theta6 
+
+		def get_T_1_4(theta1, theta5, theta6, P_0_5):
+			rotation_0_1 = m3d.Orientation(np.array([[math.cos(theta1), math.sin(theta1), 0],
+													[-math.sin(theta1), math.cos(theta1), 0], 
+													[0, 0, 1]])) 
+			P_1_5 = rotation_0_1 * P_0_5 
+			T_5_6 = self.transformation(theta6, self.alpha_minus_1[5], self.a_minus_1[5], self.d[5])
+			T_4_5 = self.transformation(theta5, self.alpha_minus_1[4], self.a_minus_1[4], self.d[4])
+			T_0_1 = self.transformation(theta1, self.alpha_minus_1[0], self.a_minus_1[0], self.d[0])
+
+			T_1_4 = T_0_1.get_inverse() * poseTransform * T_5_6.get_inverse() * T_4_5.get_inverse() 
+			# print ('T_1_4', T_1_4)
+
+			return T_1_4
 
 		# theta 3 (2 possible solutions)
-		rotation_0_1 = m3d.Orientation(np.array([[math.cos(theta1), math.sin(theta1), 0],
-												[-math.sin(theta1), math.cos(theta1), 0], 
-												[0, 0, 1]])) 
-		P_1_5 = rotation_0_1 * P_0_5 
-		T_5_6 = self.transformation(theta6, self.alpha_minus_1[5], self.a_minus_1[5], self.d[5])
-		T_4_5 = self.transformation(theta5, self.alpha_minus_1[4], self.a_minus_1[4], self.d[4])
-		T_0_1 = self.transformation(theta1, self.alpha_minus_1[0], self.a_minus_1[0], self.d[0])
+		def get_theta3(s, P_0_5): 
+			theta1, theta5, theta6 = s
 
-		T_1_4 = T_0_1.get_inverse() * poseTransform * T_5_6.get_inverse() * T_4_5.get_inverse() 
+			P_0_5 = P_0_5[0]
 
-		P_1_4 = T_1_4.get_pos() 
-		P_1_4x = P_1_4[0]
-		P_1_4y = P_1_4[1]
-		P_1_4z = P_1_4[2]
+			T_1_4 = get_T_1_4(theta1, theta5, theta6, P_0_5)
 
-		theta3 = [math.acos((P_1_4x**2+P_1_4z**2-self.a_minus_1[2]**2-self.a_minus_1[3]**2)/(2*self.a_minus_1[2]*self.a_minus_1[3])), 
-				-math.acos((P_1_4x**2+P_1_4z**2-self.a_minus_1[2]**2-self.a_minus_1[3]**2)/(2*self.a_minus_1[2]*self.a_minus_1[3]))]
-		print ('Theta 3', theta3)
+			P_1_4 = T_1_4.get_pos() 
+			P_1_4x = P_1_4[0]
+			P_1_4z = P_1_4[2] 
+
+			acos_val = (P_1_4x**2+P_1_4z**2-self.a_minus_1[2]**2-self.a_minus_1[3]**2)/(2*self.a_minus_1[2]*self.a_minus_1[3])
+
+			if 1 + zero_limit > abs(acos_val) > 1 - zero_limit: 
+				acos_val = 1 
+
+			if abs(acos_val) > 1: 
+				return None 
+
+			sol1 = angle_restriction(math.acos(acos_val))
+			sol2 = angle_restriction(-math.acos(acos_val))
+
+			theta3 = [sol1, sol2]
+			# print ('Theta 3', theta3)
+
+			return theta3 
 
 		# theta 2 (1 possible solution)
-		theta2 = [math.atan2(-P_1_4z, -P_1_4x)-math.asin(-self.a_minus_1[3]*math.sin(theta3)/math.sqrt(P_1_4x**2+P_1_4z**2))]
-		print ('Theta 2', theta2)
+		def get_theta2(s, P_0_5): 
+			theta1, theta5, theta6, theta3 = s
+
+			P_0_5 = P_0_5[0]
+
+			T_1_4 = get_T_1_4(theta1, theta5, theta6, P_0_5)
+
+			P_1_4 = T_1_4.get_pos() 
+			P_1_4x = P_1_4[0]
+			P_1_4z = P_1_4[2] 
+
+			sol1 = angle_restriction(math.atan2(-P_1_4z, -P_1_4x)-math.asin(-self.a_minus_1[3]*math.sin(theta3)/math.sqrt(P_1_4x**2+P_1_4z**2)))
+
+			theta2 = [sol1]
+			# print ('Theta 2', theta2)
+
+			return theta2 
+
+		def get_T_3_4(theta2, theta3, T_1_4):
+			T_1_2 = self.transformation(theta2, self.alpha_minus_1[1], self.a_minus_1[1], self.d[1])
+			T_2_3 = self.transformation(theta3, self.alpha_minus_1[2], self.a_minus_1[2], self.d[2])
+
+			T_3_4 = T_2_3.get_inverse() * T_1_2.get_inverse() * T_1_4 
+			return T_3_4
 
 		# theta 4 (1 possible solution)
-		T_1_2 = self.transformation(theta2, self.alpha_minus_1[1], self.a_minus_1[1], self.d[1])
-		T_2_3 = self.transformation(theta3, self.alpha_minus_1[2], self.a_minus_1[2], self.d[2])
+		def get_theta4(s, P_0_5):
+			theta1, theta5, theta6, theta3, theta2 = s
 
-		T_3_4 = T_2_3.get_inverse() * T_1_2.get_inverse() * T_1_4 
+			P_0_5 = P_0_5[0]
 
-		O_3_4 = T_3_4.get_orient()
-		X_3_4x = O_3_4[0][0]
-		X_3_4y = O_3_4[1][0]
+			T_1_4 = get_T_1_4(theta1, theta5, theta6, P_0_5)
+			T_3_4 = get_T_3_4(theta2, theta3, T_1_4)
 
-		theta = [math.atan2(X_3_4y, X_3_4x)]
-		print ('Theta 4', theta4)
+			O_3_4 = T_3_4.get_orient()
+			X_3_4x = O_3_4[0][0]
+			X_3_4y = O_3_4[1][0]
+
+			sol1 = angle_restriction(math.atan2(X_3_4y, X_3_4x))
+
+			theta4 = [sol1]
+			# print ('Theta 4', theta4)
+
+			return theta4 
+
+		def get_joint_angle(solutions, f, *args):
+			next_s = list() 
+
+			for s in solutions: 
+				theta = f(s, args)
+
+				if theta != None: 
+					# more than one solution 
+					for t in theta: 
+						next_s.append(s + [t])
+
+			return next_s 
+
+		def rmse(solution, seed):
+			diff = solution - seed
+			mse = sum(np.power(diff, 2))
+			return math.sqrt(mse)
+
+		# get all valid solutions 
+		# (theta1, theta5, theta6, theta3, theta2, theta4)
+		theta1 = get_theta1(P_0_5) 
+
+		if theta1 == None: 
+			print ('IK cannot be found!')
+			return None 
+		
+		theta1 = [[theta1[0]], [theta1[1]]]
+		theta5 = get_joint_angle(theta1, get_theta5, P_0_6)
+		theta6 = get_joint_angle(theta5, get_theta6, O_0_6)
+		theta3 = get_joint_angle(theta6, get_theta3, P_0_5)
+		theta2 = get_joint_angle(theta3, get_theta2, P_0_5)
+		theta4 = get_joint_angle(theta2, get_theta4, P_0_5)
+
+		# correct ordering
+		solutions = list() 
+		for s in theta4: 
+			new_s = np.array([s[0], s[4], s[3], s[5], s[1], s[2]])
+			solutions.append(new_s)
 
 		# select best solution out of valid thetas 
+		for s in solutions: 
+			error = rmse(s, seed_joint_angles)
+			if error < err: 
+				error = err 
+				joint_angles = s 
+
+		print (joint_angles)
 
 		return joint_angles 
 
@@ -260,6 +395,6 @@ tool_transform = m3d.Transform(np.array([[1, 0, 0, 0],
 										[0, 0, 0, 1]])) 
 ur5 = robot(tool_transform=tool_transform) 
 ur5fk = ur5.getFK(np.array([np.pi/2, np.pi/2, 0, 0, np.pi/2, 0]))
-ur5.getIK(ur5fk)
+ur5.getIK(ur5fk, seed_joint_angles=np.array([1.5707963267948957, 1.5707963267948966, 0, 0, 1.5707963267948966, 0]))
 
 
